@@ -1,0 +1,156 @@
+import os
+import json
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from dotenv import load_dotenv
+import qai_hub as hub
+
+def main():
+    # Load environment variables from .env file
+    load_dotenv()
+    
+    # Verify token is available (it should be automatically picked up by qai_hub client)
+    qai_hub_api_token = os.environ.get("QAI_HUB_API_TOKEN")
+    if not qai_hub_api_token:
+        raise ValueError("QAI_HUB_API_TOKEN environment variable is not set. Please set it in your .env file.")
+        
+    print("1. Loading the fine-tuned model and tokenizer...")
+    # Paths are relative to the root if executed from there.
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Load the tokenizer fresh from Hugging Face
+    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+    
+    # The user extracted the model files directly into /model instead of /model/phishing-distilbert/
+    model_dir = os.path.join(base_dir, "model")
+    model = AutoModelForSequenceClassification.from_pretrained(model_dir)
+
+    print("2. Exporting to ONNX format...")
+    onnx_path = os.path.join(base_dir, "model", "phishing.onnx")
+    
+    # Create dummy inputs for export with max_length=64 matching training config
+    dummy_text = "This is a dummy URL or SMS to set the input shape"
+    dummy_inputs = tokenizer(dummy_text, padding="max_length", max_length=64, truncation=True, return_tensors="pt")
+    
+    # Export using torch.onnx.export with fixed batch size (1)
+    torch.onnx.export(
+        model,
+        (dummy_inputs["input_ids"], dummy_inputs["attention_mask"]),
+        onnx_path,
+        input_names=["input_ids", "attention_mask"],
+        output_names=["logits"],
+    )
+    print(f"   Model exported to {onnx_path} (potentially with external data)")
+    
+    import onnx
+    print("   Repacking into a single ONNX file...")
+    onnx_model = onnx.load(onnx_path)
+    onnx.save(onnx_model, onnx_path) # save_as_external_data defaults to False
+    del onnx_model
+    
+    # Delete the external data file if it exists, since we embedded it
+    external_data_path = onnx_path + ".data"
+    if os.path.exists(external_data_path):
+        try:
+            os.remove(external_data_path)
+        except OSError as e:
+            print(f"   Warning: could not delete {external_data_path}: {e}")
+        
+    print("   Running ONNX checker...")
+    onnx.checker.check_model(onnx_path, full_check=True)
+    print("   ONNX check passed! Model is self-contained.")
+    
+    print(f"   Final file size: {os.path.getsize(onnx_path) / (1024*1024):.2f} MB")
+
+    # Set up AI Hub device. The requested target is Snapdragon X Elite CRD.
+    device_name = "Snapdragon X Elite CRD"
+    device = hub.Device(device_name)
+    
+    print(f"\n3a. Uploading ONNX model {onnx_path} to AI Hub...")
+    # qai_hub API Call: Uploads local file to hub and returns a Model object
+    hub_model = hub.upload_model(onnx_path)
+    print(f"   Model uploaded! Hub Model ID: {hub_model.model_id}")
+
+    print(f"3b. Submitting compile job for device '{device_name}'...")
+    
+    # qai_hub API Call: Submits compile job targeting a specific device
+    compile_job = hub.submit_compile_job(
+        model=hub_model,
+        device=device
+    )
+    
+    print("3d. Waiting for compile job to complete...")
+    # qai_hub API Call: wait() blocks until compile job completes
+    compile_job.wait()
+    target_model = compile_job.get_target_model()
+    
+    compile_status = compile_job.get_status()
+    if str(compile_status.code) != "SUCCESS":
+        print("    Compilation failed!")
+        print(f"    Raw status: {compile_status}")
+        return
+    else:
+        print("    Compilation successful!")
+        
+    print("\n3c. Submitting profiling job on compiled model...")
+    # qai_hub API Call: Profiles the compiled target_model on the device
+    profile_job = hub.submit_profile_job(
+        model=target_model,
+        device=device
+    )
+    
+    print("3d. Waiting for profile job to complete...")
+    # qai_hub API Call: Blocks until profile job completes
+    profile_job.wait()
+    
+    profile_status = profile_job.get_status()
+    if str(profile_status.code) != "SUCCESS":
+        print("    Profiling failed!")
+        print(f"    Raw status: {profile_status}")
+        return
+        
+    print("    Profiling complete!")
+    
+    # qai_hub API Call: Download the profile results dictionary
+    profile_data = profile_job.download_profile()
+    
+    # Extract latency, memory, compute unit. We grab them from execution_detail
+    execution_detail = profile_data.get("execution_detail", {})
+    
+    if isinstance(execution_detail, list):
+        if len(execution_detail) > 0:
+            execution_detail = execution_detail[0]
+        else:
+            execution_detail = {}
+            
+    latency = execution_detail.get("estimated_inference_time", "N/A")
+    peak_memory = execution_detail.get("peak_memory", "N/A")
+    compute_unit = execution_detail.get("compute_unit", "N/A")
+    
+    # Depending on AI Hub, latency might be in microseconds.
+    if isinstance(latency, (int, float)):
+        latency_ms = latency / 1000.0
+    else:
+        latency_ms = latency
+
+    # 4. Save to JSON and print
+    results = {
+        "inference_latency_ms": latency_ms,
+        "peak_memory_bytes": peak_memory,
+        "compute_unit": compute_unit,
+        "raw_profile": profile_data
+    }
+    
+    docs_dir = os.path.join(base_dir, "docs")
+    os.makedirs(docs_dir, exist_ok=True)
+    perf_path = os.path.join(docs_dir, "snapdragon_performance.json")
+    
+    print(f"\n4. Saving results to {perf_path}...")
+    with open(perf_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=4)
+        
+    print("\n=== Performance Results ===")
+    print(json.dumps(results, indent=2))
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,16 @@
+transformers
+torch
+scikit-learn
+pandas
+datasets
+fastapi
+uvicorn
+qai-hub
+onnx
+matplotlib
+seaborn
+accelerate>=1.1.0
+
+python-dotenv
+
+onnxscript==0.7.2

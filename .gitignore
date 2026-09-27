@@ -1,0 +1,7 @@
+.env
+
+model/checkpoint-*
+venv/
+__pycache__/
+*.data
+

@@ -4,6 +4,9 @@ This project is a machine learning-based phishing URL and SMS detector optimized
 
 ## Setup
 
+> **Note**: This repository uses Git LFS (Large File Storage) for model files. Ensure you have [Git LFS](https://git-lfs.com/) installed and run `git lfs install` before cloning to retrieve the `model/phishing.onnx` file properly.
+
+
 1. Create a virtual environment and install dependencies:
    ```bash
    python -m venv venv

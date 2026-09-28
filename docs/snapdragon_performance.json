@@ -1,6 +1,5 @@
 {
-    "inference_latency_ms": 2.0,
-    "peak_memory_bytes": 134217728,
+    "inference_latency_ms": 2.008,
     "compute_unit": "246 NPU / 1 CPU",
     "job_id": "jgol7z41g",
     "job_url": "https://workbench.aihub.qualcomm.com/jobs/jgol7z41g/",
@@ -1889,5 +1888,7 @@
                 "execution_cycles": 5087
             }
         ]
-    }
+    },
+    "peak_memory_min_bytes": 134709248,
+    "peak_memory_max_bytes": 134709248
 }

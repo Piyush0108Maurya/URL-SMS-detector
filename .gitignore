@@ -4,4 +4,6 @@ model/checkpoint-*
 venv/
 __pycache__/
 *.data
+training_args.bin
+data/raw/
 

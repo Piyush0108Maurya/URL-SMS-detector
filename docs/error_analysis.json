@@ -1,0 +1,27 @@
+[
+    {
+        "text": "spilledink.com/backlash/index.php",
+        "label": 0,
+        "prediction": 1
+    },
+    {
+        "text": "www.tharrin.co.nz/free/",
+        "label": 0,
+        "prediction": 1
+    },
+    {
+        "text": "shopinsiders.com/",
+        "label": 1,
+        "prediction": 0
+    },
+    {
+        "text": "www.repeatserver.com/Users/sports/news.xml",
+        "label": 1,
+        "prediction": 0
+    },
+    {
+        "text": "freesmsdownload.com/sms-text-messages/good-morning-sms.php",
+        "label": 0,
+        "prediction": 1
+    }
+]

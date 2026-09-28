@@ -1,7 +1,9 @@
 {
-    "inference_latency_ms": "N/A",
-    "peak_memory_bytes": "N/A",
-    "compute_unit": "NPU",
+    "inference_latency_ms": 2.0,
+    "peak_memory_bytes": 134217728,
+    "compute_unit": "246 NPU / 1 CPU",
+    "job_id": "jp4y6n81p",
+    "job_url": "https://app.aihub.qualcomm.com/jobs/jp4y6n81p",
     "raw_profile": {
         "execution_summary": {
             "estimated_inference_time": 2008,

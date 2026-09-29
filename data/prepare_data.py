@@ -1,79 +1,86 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.utils import resample
+import random
 import os
+import sys
+
+# Add project root to sys.path so we can import from common
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.normalize import normalize_url
 
 def prepare_data():
-    # 1. Define paths relative to the script's directory
     input_file = "raw/phishing_site_urls.csv"
+    tranco_file = "raw/tranco.csv"
     train_file = "train.csv"
     test_file = "test.csv"
     
-    # Check if the raw data file exists before proceeding
     if not os.path.exists(input_file):
-        print(f"Error: Could not find the dataset at {input_file}.")
-        print("Please make sure you have downloaded the CSV and placed it in the 'data/raw' directory.")
+        print(f"Error: Could not find {input_file}")
         return
 
-    print("Loading data...")
-    # 1. Load the raw CSV file using pandas
+    print("Loading raw phishing data...")
     df = pd.read_csv(input_file)
-
-    # 2. Rename columns
-    # We rename 'URL' to 'text' and 'Label' to 'label' for consistency in our ML pipeline
     df = df.rename(columns={"URL": "text", "Label": "label"})
-
-    # 3. Convert label values
-    # We map the string labels to integers: 1 for phishing (bad) and 0 for safe (good)
     df['label'] = df['label'].map({"bad": 1, "good": 0})
+    
+    # 1. Apply normalize_url
+    print("Normalizing existing URLs...")
+    df['text'] = df['text'].apply(normalize_url)
+    
+    # 2. Add Tranco data
+    if os.path.exists(tranco_file):
+        print("Loading Tranco top domains...")
+        tranco_df = pd.read_csv(tranco_file, names=['rank', 'domain'], nrows=20000)
+        
+        paths = ["/login", "/about", "/help", "/search?q=news", "/products", "/contact"]
+        new_rows = []
+        for domain in tranco_df['domain']:
+            norm_domain = normalize_url(domain)
+            new_rows.append({"text": norm_domain, "label": 0})
+            
+            if random.random() < 0.3:
+                chosen_path = random.choice(paths)
+                new_rows.append({"text": norm_domain + chosen_path, "label": 0})
+                
+        tranco_additions = pd.DataFrame(new_rows)
+        df = pd.concat([df, tranco_additions], ignore_index=True)
+    else:
+        print(f"Warning: {tranco_file} not found, skipping Tranco augmentation.")
 
-    # 4. Remove duplicate and null rows
-    # Drop any rows that are exactly the same as another row
-    df = df.drop_duplicates()
-    # Drop any rows that are missing the URL or the Label
+    # 3. Deduplicate
+    df = df.drop_duplicates(subset=['text'])
     df = df.dropna()
 
-    # 5. Balance the dataset
-    # Find out how many examples we have of each class
+    # 4. Rebalance
     class_0 = df[df['label'] == 0]
     class_1 = df[df['label'] == 1]
-
-    # Find the count of the minority class (the one with fewer examples)
+    
     minority_count = min(len(class_0), len(class_1))
-
-    # Undersample the majority class to match the minority count
-    # 'replace=False' ensures we don't pick the same row twice
-    class_0_downsampled = resample(class_0, replace=False, n_samples=minority_count, random_state=42)
-    class_1_downsampled = resample(class_1, replace=False, n_samples=minority_count, random_state=42)
-
-    # Combine the balanced classes back into a single dataframe
-    df_balanced = pd.concat([class_0_downsampled, class_1_downsampled])
-
-    # 6. Shuffle and split into train/test sets
-    # train_test_split will automatically shuffle the data before splitting
-    # test_size=0.2 means 20% of the data goes to the test set, 80% to the training set
-    # stratify=df_balanced['label'] ensures that both train and test sets have an equal 50/50 split of 0s and 1s
+    
+    # Undersample to match
+    class_0_down = class_0.sample(n=minority_count, random_state=42)
+    class_1_down = class_1.sample(n=minority_count, random_state=42)
+    
+    df_balanced = pd.concat([class_0_down, class_1_down])
+    
+    # Shuffle
+    df_balanced = df_balanced.sample(frac=1, random_state=42).reset_index(drop=True)
+    
+    # Train/test split
+    from sklearn.model_selection import train_test_split
     train_df, test_df = train_test_split(df_balanced, test_size=0.2, random_state=42, stratify=df_balanced['label'])
-
-    # Save the split datasets to their respective CSV files, without the index column
+    
     train_df.to_csv(train_file, index=False)
     test_df.to_csv(test_file, index=False)
-    print(f"Saved {train_file} and {test_file}")
-
-    # 7. Print final statistics
-    print("\n--- Training Set Statistics ---")
-    print(f"Total rows: {len(train_df)}")
-    print("Class Balance:")
-    print(train_df['label'].value_counts())
-
-    print("\n--- Testing Set Statistics ---")
-    print(f"Total rows: {len(test_df)}")
-    print("Class Balance:")
-    print(test_df['label'].value_counts())
+    
+    # Print class balance and % with '/'
+    print("\n--- Final Dataset Stats ---")
+    for label_val, name in [(0, 'Safe'), (1, 'Phishing')]:
+        sub = df_balanced[df_balanced['label'] == label_val]
+        count = len(sub)
+        slash_count = sub['text'].str.contains('/').sum()
+        slash_pct = (slash_count / count) * 100 if count > 0 else 0
+        print(f"Label {label_val} ({name}): Count = {count}, Contains '/' = {slash_pct:.2f}%")
 
 if __name__ == "__main__":
-    # We change the current working directory to the directory of this script
-    # so that relative paths like 'raw/phishing_urls.csv' work correctly
-    # regardless of where we run the script from.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     prepare_data()

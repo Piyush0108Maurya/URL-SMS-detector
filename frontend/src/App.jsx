@@ -557,7 +557,7 @@ function App() {
             <div className="step-content">
               <h3>Compile with AI Hub</h3>
               <p>
-                Quantized and optimized for target Snapdragon architectures using Qualcomm AI Hub workbench toolchains.
+                Exported to ONNX and compiled through Qualcomm AI Hub, targeting Snapdragon X Elite.
               </p>
             </div>
           </div>
